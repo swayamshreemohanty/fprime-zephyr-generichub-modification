@@ -6,8 +6,7 @@
 
 #include "fprime-zephyr/Drv/ZephyrUartDriver/ZephyrUartDriver.hpp"
 #include <Fw/FPrimeBasicTypes.hpp>
-#include "Fw/Types/Assert.hpp"
-#include "Fw/Types/BasicTypes.hpp"
+#include <zephyr/kernel.h>
 
 namespace Zephyr {
 
@@ -92,8 +91,27 @@ Drv::ByteStreamStatus ZephyrUartDriver ::send_handler(const FwIndexType portNum,
     return Drv::ByteStreamStatus::OP_OK;
 }
 
-void ZephyrUartDriver ::recvReturnIn_handler(const FwIndexType portNum, Fw::Buffer& returnBuffer) {
-    this->deallocate_out(0, returnBuffer);
-}
+    Drv::ByteStreamStatus ZephyrUartDriver ::
+        send_handler(
+            const FwIndexType portNum,
+            Fw::Buffer &sendBuffer
+        )
+    {
+        U32 size = sendBuffer.getSize();
+        
+        // Transmit byte by byte
+        for (U32 i = 0; i < size; i++) {
+            uart_poll_out(this->m_dev, sendBuffer.getData()[i]);
+        }
+        
+        // Inter-packet delay: Prevents back-to-back packets from merging
+        // in the Linux UART buffer on the RPi side. Without this delay,
+        // LinuxUartDriver with VMIN=0 will read multiple packets in one
+        // read() call, causing GenericHub to see corrupted data.
+        // 5ms is safe for 31-byte packets at 115200 baud (~2.7ms transmission time)
+        k_sleep(K_MSEC(5));
+        
+        return Drv::ByteStreamStatus::OP_OK;
+    }
 
 }  // end namespace Zephyr
